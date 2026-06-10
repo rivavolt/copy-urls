@@ -3,21 +3,25 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nix-crx.url = "github:rivavolt/nix-crx";
+    nix-webext.url = "github:rivavolt/nix-webext";
   };
 
-  outputs = { self, nixpkgs, nix-crx }:
+  outputs = { self, nixpkgs, nix-webext }:
     let
       forAllSystems = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ];
     in {
       packages = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          lib = pkgs.lib;
 
           version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
 
           # Must match browser_specific_settings.gecko.id in wxt.config.ts.
           geckoId = "copy-urls@andreivolt";
+          extId = "fhfllhicjoopejlkgbhpeogdlbbccbbp";
+
+          firefoxAppDir = "share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
 
           # FOD: bun resolves node_modules from the frozen lockfile. Network access is allowed only because the output is content-addressed by outputHash. The hash is per-system because esbuild/rollup install platform-native optional deps; bump both when bun.lock changes.
           nodeModules = pkgs.stdenvNoCC.mkDerivation {
@@ -53,7 +57,11 @@
             }.${system};
           };
 
-          # WXT compiles one bundle per browser target, both MV3: it emits background.service_worker for Chrome and background.scripts plus the gecko id for Firefox.
+          # WXT compiles one bundle per browser target, both MV3: it emits
+          # background.service_worker for Chrome and background.scripts plus the
+          # gecko id for Firefox. These are independent bundles, not one manifest
+          # projected — so nix-webext drives only the (keyless) Chrome CRX, and
+          # the Firefox XPI is zipped from WXT's own firefox bundle below.
           wxtDist = browser:
             pkgs.stdenvNoCC.mkDerivation {
               pname = "copy-urls-${browser}";
@@ -85,16 +93,17 @@
             cp -R ${wxtDist "chrome"}/. $out/share/chromium-extension/
           '';
 
-          # Chrome: pack a signed CRX and an external-extension manifest so the browser installs it persistently.
-          crxPkg = nix-crx.lib.mkCrxPackage {
-            inherit pkgs extension version;
-            key = ./keys/signing.pem;
-            name = "copy-urls";
+          # Chrome CRX (signed at activation from the sops key; build is keyless).
+          # extId is the stable Chrome ID the old committed key derived.
+          chromeExt = nix-webext.lib.mkBrowserExtension {
+            inherit pkgs extension extId geckoId version;
+            pname = "copy-urls";
+            firefox = false;
+            transformManifest = false;
           };
 
-          extDir = "share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
-
-          # Firefox: zip the firefox-mv3 bundle into an unsigned XPI. sign-extension.sh in the nixos-config repo signs this via AMO's unlisted channel.
+          # Firefox: zip WXT's firefox-mv3 bundle into an unsigned XPI.
+          # sign-extension.sh in the nixos-config repo signs it via AMO.
           firefoxXpi = pkgs.stdenv.mkDerivation {
             pname = "copy-urls-firefox-xpi";
             inherit version;
@@ -105,22 +114,21 @@
               zip -r $TMPDIR/extension.xpi .
             '';
             installPhase = ''
-              mkdir -p $out/${extDir}
-              cp $TMPDIR/extension.xpi $out/${extDir}/${geckoId}.xpi
+              mkdir -p $out/${firefoxAppDir}
+              cp $TMPDIR/extension.xpi $out/${firefoxAppDir}/${geckoId}.xpi
             '';
           };
         in {
-          chrome = crxPkg.package;
+          chrome = chromeExt.chrome;
           firefox = firefoxXpi;
 
           default = pkgs.symlinkJoin {
             name = "copy-urls";
             paths = [
-              crxPkg.package
+              chromeExt.chrome
               firefoxXpi
             ];
           };
-        }
-      );
+        });
     };
 }
