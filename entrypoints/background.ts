@@ -17,41 +17,8 @@ export default defineBackground(() => {
     return urls;
   }
 
-  async function ensureOffscreenDocument() {
-    // If an offscreen document already exists, skip creating a new one
-    // @ts-ignore: offscreen typings may not exist in chrome types
-    const hasDoc = await chrome.offscreen.hasDocument?.();
-    if (hasDoc) return;
-
-    // @ts-ignore: offscreen typings may not exist in chrome types
-    await chrome.offscreen.createDocument?.({
-      url: "offscreen.html",
-      reasons: ["CLIPBOARD"],
-      justification: "Copy URLs to clipboard on action click",
-    });
-    // Wait until the offscreen page is ready by pinging it a few times
-    await waitForOffscreenReady();
-  }
-
-  async function waitForOffscreenReady(retries = 10, delayMs = 100): Promise<void> {
-    for (let i = 0; i < retries; i++) {
-      try {
-        const resp = await new Promise<{ ok: boolean }>((resolve, reject) => {
-          chrome.runtime.sendMessage({ type: "ping" }, (response) => {
-            const lastError = chrome.runtime.lastError;
-            if (lastError) return reject(new Error(lastError.message));
-            resolve(response as any);
-          });
-        });
-        if (resp?.ok) return;
-      } catch {}
-      await new Promise((r) => setTimeout(r, delayMs));
-    }
-    throw new Error("Offscreen page not ready");
-  }
-
   async function copyTextToClipboard(text: string): Promise<void> {
-    // Use the page context to perform the copy to avoid offscreen focus issues
+    // Perform the copy in the active page context for reliability
     await copyViaPage(text);
   }
 
@@ -97,17 +64,6 @@ export default defineBackground(() => {
     setTimeout(() => chrome.action.setBadgeText({ text: "" }), ms);
   }
 
-  function notify(title: string, message: string) {
-    // Use bundled icon from public/
-    chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icon-16.png",
-      title,
-      message,
-      priority: 0,
-    });
-  }
-
   chrome.action.onClicked.addListener(async () => {
     try {
       const urls = await getHighlightedTabUrls();
@@ -115,14 +71,14 @@ export default defineBackground(() => {
       await copyTextToClipboard(text);
       const count = urls.length;
       showBadge("OK");
-      notify("Copied URLs", `Copied ${count} URL${count === 1 ? "" : "s"} to clipboard`);
+      console.info(`Copied ${count} URL${count === 1 ? "" : "s"} to clipboard.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("Copy failed:", err);
       chrome.action.setBadgeBackgroundColor({ color: "#f44336" });
       chrome.action.setBadgeText({ text: "ERR" });
       setTimeout(() => chrome.action.setBadgeText({ text: "" }), 1500);
-      notify("Copy failed", message);
+      console.warn("Copy notification suppressed:", message);
     }
   });
 });

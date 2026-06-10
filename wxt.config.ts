@@ -9,8 +9,12 @@ export default defineConfig({
     description: "On click, copies all highlighted tabs' URLs to the clipboard.",
     action: {
       default_title: "Copy selected tab URLs",
+      default_icon: "icon.png",
     },
-    permissions: ["tabs", "clipboardWrite", "offscreen", "notifications", "scripting", "activeTab"],
+    permissions: ["tabs", "clipboardWrite", "scripting", "activeTab"],
+    icons: {
+      128: "icon.png",
+    },
     host_permissions: [],
   },
 });
