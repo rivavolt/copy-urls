@@ -1,8 +1,4 @@
-# Dependencies
 node_modules/
-
-# WXT build output
 .output/
-
-# WXT working directory/cache
 .wxt/
+result*
