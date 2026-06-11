@@ -122,6 +122,14 @@
           chrome = chromeExt.chrome;
           firefox = firefoxXpi;
 
+          # Release assets in the shared nix-webext convention (chrome store zip + unsigned xpi), composed here from this flake's own parts because the firefox xpi comes from WXT's bundle, not from mkBrowserExtension.
+          release = nix-webext.lib.mkReleaseAssets {
+            inherit pkgs version;
+            pname = "copy-urls";
+            chromeContent = chromeExt.chromeContent;
+            xpi = "${firefoxXpi}/${firefoxAppDir}/${geckoId}.xpi";
+          };
+
           default = pkgs.symlinkJoin {
             name = "copy-urls";
             paths = [
