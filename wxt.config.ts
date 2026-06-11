@@ -20,6 +20,7 @@ export default defineConfig({
           browser_specific_settings: {
             gecko: {
               id: "copy-urls@andreivolt",
+              data_collection_permissions: { required: ["none"] },
               strict_min_version: "128.0",
             },
           },
